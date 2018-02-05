@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 
 ##############################################################################
-#  Program:  location_engine.py
+#  Program:  geolocation_engine.py
 # Language:  Python 3
 #   Author:  Collin Crowell
 #
