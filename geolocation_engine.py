@@ -159,14 +159,16 @@ class LocationEngine(object):
     Calculate the location of devices that are heard by three or more bstns with a single transaction. 
     Default time precision is nanoseconds.
     """
-    def __init__(self, transaction, debug=False, microseconds=False):
+    def __init__(self, transaction, debug=False, microseconds=False, visualize=False):
         """
         :param transaction: Transaction
         :param debug: boolean
         :param microseconds: boolean
+        :param visualize: boolean
         """
         self._transaction = transaction
         self._debug = debug
+        self._visualize = visualize
         self._dev_x = None
         self._dev_y = None
         self._dev_lat = None
@@ -318,7 +320,10 @@ class LocationEngine(object):
 
                 dx = d[0, 0]
                 dy = d[1, 0]
-            except np.linalg.LinAlgError:
+            except np.linalg.LinAlgError as e:
+                if self._debug:
+                    print("Exception! " + str(e))
+
                 dx = 100
                 dy = 100
 
@@ -356,6 +361,9 @@ class LocationEngine(object):
 
             x0 += dx
             y0 += dy
+
+            if self._visualize:
+                print('dx: ' + str(dx) + " dy: " + str(dy))
 
             if abs(dx) < 10 and abs(dy) < 10:
                 if self._debug:

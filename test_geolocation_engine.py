@@ -11,6 +11,7 @@
 
 import sys
 import threading
+import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
@@ -66,7 +67,7 @@ def calc_distance(lat1, lng1, lat2, lng2):
 # Test with calculated TDOA values to verify correctness
 #
 ###############################################################################
-def calculated_time_data_test():
+def calculated_time_data_test(debug=False, visualize=False):
     print("Calculated time data test: " + str(datetime.now()) + '\n')
 
     # Known Location (43.054150, -70.781951) for known time values
@@ -86,15 +87,70 @@ def calculated_time_data_test():
 
     tx = Transaction(dev_eui='00000000FFFFFFFF', join_id=0, seq_no=0, datarate=0, uplinks=uplinks)
 
-    location_engine = LocationEngine(transaction=tx, debug=False)
+    location_engine = LocationEngine(transaction=tx, debug=debug, visualize=visualize)
 
     lat, lng = location_engine.compute_device_location()
+
+    if visualize or debug:
+        print("\n")
 
     print("Calculated Device Location Lat: " + str(lat) + " Lng: " + str(lng))
     print("    Actual Device Location Lat: 43.054150 Lng: -70.781951")
     print("\nDistance Error: " + str(round(calc_distance(lat, lng, 43.054150, -70.781951), 1)) + ' meters')
 
     print('\n' + "End calculated time data test: " + str(datetime.now()))
+
+
+###############################################################################
+# Test with calculated TDOA values to verify correctness
+#
+###############################################################################
+def convergence_error_test(debug=False, visualize=False):
+    print("Start convergence error test: " + str(datetime.now()) + '\n')
+
+
+###############################################################################
+# Test with calculated TDOA values to verify correctness
+#
+###############################################################################
+def filter_algorithm_test(debug=False, visualize=False):
+    print("Start filter algorithm test: " + str(datetime.now()) + '\n')
+
+    # TODO Populate result dict with calculated lat,lng values
+    results_dict = dict()
+
+    min_sample_size = 2
+    result_list = list()  # list of (dev_eui, lat, lng) tuples
+    for key in results_dict:
+        current_results_list = results_dict[key]
+
+        while True:
+            lat_sum = 0
+            lng_sum = 0
+            for result in current_results_list:
+                lat_sum += result[0]
+                lng_sum += result[1]
+
+            lat_avg = lat_sum / len(current_results_list)
+            lng_avg = lng_sum / len(current_results_list)
+
+            current_result_length = len(current_results_list)
+
+            if current_result_length <= min_sample_size:
+                result_list.append((key, lat_avg, lng_avg))
+                break
+
+            worst_loc = 0
+            worst_loc_i = None
+            for i, result in enumerate(current_results_list):
+                distance = calc_distance(lat_avg, lng_avg, result[0], result[1])
+                if distance > worst_loc:
+                    worst_loc = distance
+                    worst_loc_i = i
+
+            del current_results_list[worst_loc_i]
+
+    print(result_list)
 
 
 ###############################################################################
@@ -151,19 +207,70 @@ def performance_test():
 
 
 ###############################################################################
+# parseArgs
+#    -Parse arguments and provide help, description, etc
+###############################################################################
+def parse_args():
+    desc = "Test the geolocation_engine.py script"
+
+    parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter,
+                                     description=desc)
+
+    parser.add_argument('-d', '--debug',
+                        help="Enable debug",
+                        action="store_true")
+
+    parser.add_argument('-v', '--vis',
+                        help="Visualize the progress of the algorithm",
+                        action="store_true")
+
+    group = parser.add_mutually_exclusive_group()
+
+    group.add_argument('-c', '--calc',
+                        help="Run calculated test",
+                        action="store_true")
+
+    group.add_argument('-p', '--perf',
+                        help="Run performance test",
+                        action="store_true")
+
+    group.add_argument('-e', '--err',
+                       help="Run convergence error test",
+                       action="store_true")
+
+    group.add_argument('-f', '--filter',
+                       help="Run filter algorithm test",
+                       action="store_true")
+
+    return parser.parse_args()
+
+
+###############################################################################
 # main()
 #
 ###############################################################################
 def main():
+    args = parse_args()
+
     sep = '-' * 50
     print(sep)
 
     # Test against calculated data
-    calculated_time_data_test()
-    print(sep)
+    if args.calc:
+        calculated_time_data_test(debug=args.debug, visualize=args.vis)
 
     # Performance test
-    performance_test()
+    elif args.perf:
+        performance_test()
+
+    # Convergence error test
+    elif args.err:
+        convergence_error_test()
+
+    # Filter algorithm test
+    elif args.filter:
+        filter_algorithm_test()
+
     print(sep)
 
 
