@@ -10,7 +10,7 @@
 ##############################################################################
 
 import sys
-import threading
+import sqlite3
 import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
@@ -18,36 +18,106 @@ from datetime import datetime
 from geolocation_engine import *
 
 
-class CSVData(object):
-    """
-    Class for storing CSV data
-    """
-    def __init__(self, dev_eui, real_lat, real_lng):
-        self.dev_eui = dev_eui
-        self.real_lat = real_lat
-        self.real_lng = real_lng
+###############################################################################
+# Locate a device from a SQLite db file.
+#
+# Return JSON Array of estimated locations:
+# [
+#    {
+#       "lat":43.128362,
+#       "lng":-70.742126
+#    },
+#    {
+#       "lat":43.128352,
+#       "lng":-70.742116
+#    }
+# ]
+###############################################################################
+def locate_device_from_db(db_file, device_eui, debug=False):
+    con = sqlite3.connect(db_file)
+    cur = con.cursor()
 
-        self.calc_lat = None
-        self.calc_lng = None
-        self.distance_error = None
+    cur.execute("SELECT * FROM Geo WHERE devEui = '"+device_eui+"'ORDER BY seqNo, time")
 
+    rows = cur.fetchall()
 
-class AtomicCounter(object):
-        """
-        Atomic counter class
-        """
+    # Debug Tx Counters
+    total_tx = 0  # Total transactions in db
+    skipped_tx = 0  # Transactions not heard by three bstns
+    cannot_compute_tx = 0  # Convergence error when geolocating end device
 
-        def __init__(self, start=0):
-            self._current = start
-            self._lock = threading.Lock()
+    last_time = None
+    last_seq_no = None
 
-        def increment(self, inc_by=1):
-            with self._lock:
-                self._current += inc_by
+    device_location_list = list()
 
-        def get_value(self):
-            with self._lock:  # are integer operations atomic?
-                return self._current
+    uplinks = list()
+    for row in rows:
+        time = int(row[3])
+        seq_no = int(row[2])
+        bstn_eui = row[1]
+        bstn_lat = float(row[4])
+        bstn_lng = float(row[5])
+
+        real_dev_lat = float(row[6])
+        real_dev_lng = float(row[7])
+
+        if last_time is None:
+            last_time = time
+
+        if last_seq_no is None:
+            last_seq_no = seq_no
+
+        uplink = Uplink(time=time, rssi=0, snr=0, bstn_eui=bstn_eui, bstn_lat=bstn_lat, bstn_lng=bstn_lng)
+
+        # New transaction, check if last transaction is valid for geolocation
+        if seq_no != last_seq_no:
+            total_tx += 1
+
+            if len(uplinks) >= 3:
+                if debug:
+                    print('-'*20 + '\nSeqNo: ' + str(last_seq_no))
+                    for up in uplinks:
+                        print(str(up.get_time()) + ' ' + up.get_bstn_eui() + ' ' + str(up.get_bstn_geolocation()))
+                    print('-' * 20)
+
+                tx = Transaction(dev_eui=device_eui, join_id=0, seq_no=last_seq_no, datarate=0, uplinks=uplinks)
+
+                location_engine = LocationEngine(transaction=tx, debug=False)
+                calc_lat, calc_lng = location_engine.compute_device_location()
+
+                if not calc_lat or not calc_lng:
+                    cannot_compute_tx += 1
+                else:
+                    location = {
+                        'lat': calc_lat,
+                        'lng': calc_lng
+                    }
+                    if real_dev_lat and real_dev_lng:
+                        location['actLat'] = real_dev_lat
+                        location['actLng'] = real_dev_lng
+
+                    device_location_list.append(location)
+
+            else:
+                skipped_tx += 1
+
+            last_seq_no = seq_no
+            uplinks = list()
+
+        elif abs(time - last_time) > 200000:  # Filter out old (invalid) uplinks
+            last_time = time
+            continue
+
+        uplinks.append(uplink)
+        last_time = time
+
+    if debug:
+        print("      Number of Transaction in DB: " + str(total_tx))
+        print("Number of Valid Transaction in DB: " + str(total_tx - skipped_tx))
+        print("Number of Successful Calculations: " + str(total_tx - skipped_tx - cannot_compute_tx))
+
+    return device_location_list
 
 
 ###############################################################################
@@ -107,14 +177,16 @@ def calculated_time_data_test(debug=False, visualize=False):
 ###############################################################################
 def convergence_error_test(debug=False, visualize=False):
     print("Start convergence error test: " + str(datetime.now()) + '\n')
+    print("Not implemented...")
 
 
 ###############################################################################
 # Test with calculated TDOA values to verify correctness
 #
 ###############################################################################
-def filter_algorithm_test(debug=False, visualize=False):
+def filter_algorithm_test(db_namedebug=False, visualize=False):
     print("Start filter algorithm test: " + str(datetime.now()) + '\n')
+    print("Not implemented...")
 
     # TODO Populate result dict with calculated lat,lng values
     results_dict = dict()
@@ -188,20 +260,21 @@ def performance_test():
     def call_compute(location_engine):
         return location_engine.compute_device_location()
 
-    print("Need real data for better test!!")
-    print("<========= Futures Start : " + str(datetime.now()))
+    print("Futures Start: " + str(datetime.now()))
     with ThreadPoolExecutor(max_workers=2) as executor:
         future_location = {executor.submit(call_compute, location_engine): location_engine for location_engine in calculation_list}
         for future in as_completed(future_location):
             lat, lng = future.result()
             # print('lat: ' + str(lat) + ' lng: ' + str(lng))
-    print("             Futures End : " + str(datetime.now()) + " =========>")
+    print("  Futures End: " + str(datetime.now()))
 
-    print("<=========  Serial Start : " + str(datetime.now()))
+    print("-"*30)
+
+    print("Serial Start : " + str(datetime.now()))
     for location_engine in calculation_list:
         lat, lng = location_engine.compute_device_location()
         # print('lat: ' + str(lat) + ' lng: ' + str(lng))
-    print("              Serial End : " + str(datetime.now()) + " =========>")
+    print("  Serial End : " + str(datetime.now()))
 
     print("\nEnd performance test: " + str(datetime.now()))
 
@@ -265,11 +338,11 @@ def main():
 
     # Convergence error test
     elif args.err:
-        convergence_error_test()
+        convergence_error_test(debug=args.debug, visualize=args.vis)
 
     # Filter algorithm test
     elif args.filter:
-        filter_algorithm_test()
+        filter_algorithm_test(debug=args.debug, visualize=args.vis)
 
     print(sep)
 
