@@ -11,18 +11,7 @@
 
 import math
 import numpy as np
-
-# speed of light through air in meters / second
-V = 299792458
-
-# earth radius in meters
-R = 6371000
-
-# Microseconds in second
-M = 1000000.0
-
-# Nanoseconds in second
-N = 1000000000.0
+from geolocation_utils import V, R, M, N
 
 
 class Transaction(object):

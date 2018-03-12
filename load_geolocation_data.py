@@ -2,6 +2,7 @@
 
 import argparse
 import csv
+import json
 import os
 import sqlite3
 import sys
@@ -11,7 +12,7 @@ import sys
 # Load end device uplink data into a SQLite db file.
 #
 ###############################################################################
-def load_location_data(input_file, db_name):
+def load_location_data(input_file, db_name, dev_loc_dict):
     print('Loading file ' + input_file + ' into DB ' + db_name + '...')
 
     with open(input_file, 'r', newline='', encoding='utf-8-sig') as f:
@@ -44,6 +45,12 @@ def load_location_data(input_file, db_name):
                 if not dev_lng:
                     dev_lng = '0'
 
+                # Not a GPS enabled device
+                if dev_lat == '0' and dev_lng == '0':
+                    if dev_loc_dict.get(dev_eui):
+                        dev_lat = str(dev_loc_dict[dev_eui]['lat'])
+                        dev_lng = str(dev_loc_dict[dev_eui]['lng'])
+
                 cur.execute("INSERT INTO Geo VALUES('"+dev_eui+"','"+gw_eui+"',"+seq_no+","+time +
                             ","+gw_lat+","+gw_lng+","+dev_lat+","+dev_lng+")")
 
@@ -60,6 +67,9 @@ def parse_args():
 
     parser.add_argument('-n', '--name',
                         help='Name of the local db file.', default='geo.db')
+
+    parser.add_argument('-l', '--loc',
+                        help='Name of the device to location JSON file.')
 
     parser.add_argument('-c', '--csv', required=True,
                         help='Path to the csv file.')
@@ -79,7 +89,16 @@ def main():
         print('File: ' + args.csv + ' does not exist')
         sys.exit(1)
 
-    load_location_data(input_file=args.csv, db_name=args.name)
+    # Check if dev loc json file exists
+    dev_loc_dict = dict()
+    if args.loc:
+        if not os.path.exists(args.loc):
+            print('File: ' + args.loc + ' does not exist')
+            sys.exit(1)
+        else:
+            dev_loc_dict = json.load(open(args.loc))
+
+    load_location_data(input_file=args.csv, db_name=args.name, dev_loc_dict=dev_loc_dict)
 
 
 if __name__ == "__main__":
