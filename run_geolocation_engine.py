@@ -14,7 +14,7 @@ import sqlite3
 import sys
 
 from geolocation_engine import *
-from geolocation_utils import validate_euis
+from geolocation_utils import validate_euis, calc_distance
 
 
 ###############################################################################
@@ -60,6 +60,14 @@ def locate_device_from_db(db_file, device_eui, debug=False):
 
         real_dev_lat = float(row[6])
         real_dev_lng = float(row[7])
+
+        # Invalid bstn location, skip
+        if not bstn_lat or not bstn_lng:
+            continue
+
+        # No real location, skip
+        if not real_dev_lat or not real_dev_lng:
+            continue
 
         if last_time is None:
             last_time = time
@@ -108,8 +116,15 @@ def locate_device_from_db(db_file, device_eui, debug=False):
             last_time = time
             continue
 
-        uplinks.append(uplink)
-        last_time = time
+        valid = True
+        for ex_uplink in uplinks:
+            if ex_uplink.get_bstn_geolocation()[0] == uplink.get_bstn_geolocation()[0] \
+                    and ex_uplink.get_bstn_geolocation()[1] == uplink.get_bstn_geolocation()[1]:
+                valid = False
+
+        if valid:
+            uplinks.append(uplink)
+            last_time = time
 
     if debug:
         print("      Number of Transaction in DB: " + str(total_tx))
@@ -117,6 +132,57 @@ def locate_device_from_db(db_file, device_eui, debug=False):
         print("Number of Successful Calculations: " + str(total_tx - skipped_tx - cannot_compute_tx))
 
     return device_location_list
+
+
+###############################################################################
+# Calculate location estimate errors
+#
+###############################################################################
+def calc_location_errors(locations):
+    # Counters
+    total_locs = 0
+    fifty_or_less = 0
+    fifty_to_one_hundred = 0
+    one_hundred_to_two_hundred = 0
+    two_hundred_to_five_hundred = 0
+    five_hundred_or_more = 0
+
+    for location in locations:
+        calc_lat = location['lat']
+        calc_lng = location['lng']
+        real_lat = location['actLat']
+        real_lng = location['actLng']
+
+        if calc_lat and calc_lng and real_lat and real_lng:
+            distance_error = calc_distance(lat1=calc_lat, lng1=calc_lng, lat2=real_lat, lng2=real_lng)
+
+            total_locs += 1
+            if distance_error <= 50:
+                fifty_or_less += 1
+            elif distance_error <= 100:
+                fifty_to_one_hundred += 1
+            elif distance_error <= 200:
+                one_hundred_to_two_hundred += 1
+            elif distance_error <= 500:
+                two_hundred_to_five_hundred += 1
+            else:
+                five_hundred_or_more += 1
+
+    print("Total number of locations: " + str(total_locs))
+    per = round((fifty_or_less / total_locs) * 100, 2)
+    print(str(per) + "% of location estimates were within 50 meters of the actual device location.")
+
+    per = round((fifty_to_one_hundred / total_locs) * 100, 2)
+    print(str(per) + "% of the location estimates were between 50 and 100 meters of the actual device location.")
+
+    per = round((one_hundred_to_two_hundred / total_locs) * 100, 2)
+    print(str(per) + "% of the location estimates were between 100 and 200 meters of the actual device location.")
+
+    per = round((two_hundred_to_five_hundred / total_locs) * 100, 2)
+    print(str(per) + "% of the location estimates were between 200 and 500 meters of the actual device location.")
+
+    per = round((five_hundred_or_more / total_locs) * 100, 2)
+    print(str(per) + "% of the location estimates were further than 500 meters of the actual device location.")
 
 
 ###############################################################################
@@ -157,9 +223,16 @@ def main():
 
     eui_list = validate_euis(args.eui)
 
-    if len(eui_list):
+    for eui in eui_list:
+        print('Device: ' + eui)
         # Calculate device location estimate
-        locate_device_from_db(args.db, eui_list[0], debug=args.debug)
+        locations = locate_device_from_db(args.db, eui, debug=args.debug)
+
+        # Calculate errors
+        if len(locations):
+            calc_location_errors(locations)
+        else:
+            print('Cannot compute location errors!')
 
 
 if __name__ == "__main__":
