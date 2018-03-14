@@ -186,6 +186,102 @@ def calc_location_errors(locations):
 
 
 ###############################################################################
+# Filter calculated location estimates and determine error
+#
+###############################################################################
+def filter_results_calc_error(locations):
+    min_sample_size = 10
+    moving_dev_threshold = 0.0001
+
+    # Copy locations list
+    filt_locations = list(locations)
+
+    # Check if moving GPS device
+    first_lat = filt_locations[0]['actLat']
+    first_lng = filt_locations[0]['actLng']
+
+    moving = False
+    start_weight = len(filt_locations)
+    for location in filt_locations:
+        if abs(first_lat - location['actLat']) > moving_dev_threshold:
+            moving = True
+            break
+        if abs(first_lng - location['actLng']) > moving_dev_threshold:
+            moving = True
+            break
+
+        # Add initial weights
+        location['weight'] = start_weight
+
+    if not moving:
+        # Weight locations filter
+        curr_weight = 1
+        while True:
+            lat_sum = 0
+            lng_sum = 0
+            weight_sum = 0
+            for location in filt_locations:
+                lat_sum += location['lat'] * location['weight']
+                lng_sum += location['lng'] * location['weight']
+                weight_sum += location['weight']
+
+            lat_avg = lat_sum / float(weight_sum)
+            lng_avg = lng_sum / float(weight_sum)
+
+            current_result_length = len(filt_locations)
+
+            if curr_weight >= current_result_length - min_sample_size:
+                break
+
+            worst_loc = 0
+            worst_loc_i = None
+            for i, location in enumerate(filt_locations):
+                if location['weight'] < start_weight:
+                    continue
+                distance = calc_distance(lat_avg, lng_avg, location['lat'], location['lng'])
+                if distance > worst_loc:
+                    worst_loc = distance
+                    worst_loc_i = i
+
+            filt_locations[worst_loc_i]['weight'] = curr_weight
+            curr_weight += 1
+
+        distance_error = calc_distance(lat1=lat_avg, lng1=lng_avg, lat2=first_lat, lng2=first_lng)
+        print('Post weighted filter distance error: ' + str(distance_error) + ' meters')
+
+        # Remove locations filter
+        while True:
+            lat_sum = 0
+            lng_sum = 0
+            for location in filt_locations:
+                lat_sum += location['lat']
+                lng_sum += location['lng']
+
+            lat_avg = lat_sum / len(filt_locations)
+            lng_avg = lng_sum / len(filt_locations)
+
+            current_result_length = len(filt_locations)
+
+            if current_result_length <= min_sample_size:
+                break
+
+            worst_loc = 0
+            worst_loc_i = None
+            for i, location in enumerate(filt_locations):
+                distance = calc_distance(lat_avg, lng_avg, location['lat'], location['lng'])
+                if distance > worst_loc:
+                    worst_loc = distance
+                    worst_loc_i = i
+
+            del filt_locations[worst_loc_i]
+
+        distance_error = calc_distance(lat1=lat_avg, lng1=lng_avg, lat2=first_lat, lng2=first_lng)
+        print('Post filter distance error: ' + str(distance_error) + ' meters')
+    else:
+        print('Moving device! Cannot perform filtering')
+
+
+###############################################################################
 # parseArgs
 #    -Parse arguments and provide help, description, etc
 ###############################################################################
@@ -229,8 +325,9 @@ def main():
         locations = locate_device_from_db(args.db, eui, debug=args.debug)
 
         # Calculate errors
-        if len(locations):
+        if locations:
             calc_location_errors(locations)
+            filter_results_calc_error(locations)
         else:
             print('Cannot compute location errors!')
 
