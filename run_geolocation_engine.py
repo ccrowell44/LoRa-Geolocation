@@ -10,6 +10,8 @@
 ##############################################################################
 
 import argparse
+import json
+import os
 import sqlite3
 import sys
 
@@ -32,7 +34,7 @@ from geolocation_utils import validate_euis, calc_distance
 #    }
 # ]
 ###############################################################################
-def locate_device_from_db(db_file, device_eui, debug=False):
+def locate_device_from_db(db_file, device_eui, gw_pin_data, debug=False):
     con = sqlite3.connect(db_file)
     cur = con.cursor()
 
@@ -50,6 +52,7 @@ def locate_device_from_db(db_file, device_eui, debug=False):
 
     device_location_list = list()
 
+    gw_pin_dict = dict()
     uplinks = list()
     for row in rows:
         time = int(row[3])
@@ -87,6 +90,16 @@ def locate_device_from_db(db_file, device_eui, debug=False):
                     for up in uplinks:
                         print(str(up.get_time()) + ' ' + up.get_bstn_eui() + ' ' + str(up.get_bstn_geolocation()))
                     print('-' * 20)
+
+                for uplink in uplinks:
+                    if uplink.get_bstn_eui() not in gw_pin_dict:
+                        gw_pin_dict[uplink.get_bstn_eui()] = {
+                            "color": "red",
+                            "lat": uplink.get_bstn_geolocation()[0],
+                            "lng": uplink.get_bstn_geolocation()[1],
+                            "zIndex": 50,
+                            "name": uplink.get_bstn_eui()
+                        }
 
                 tx = Transaction(dev_eui=device_eui, join_id=0, seq_no=last_seq_no, datarate=0, uplinks=uplinks)
 
@@ -130,6 +143,9 @@ def locate_device_from_db(db_file, device_eui, debug=False):
         print("      Number of Transaction in DB: " + str(total_tx))
         print("Number of Valid Transaction in DB: " + str(total_tx - skipped_tx))
         print("Number of Successful Calculations: " + str(total_tx - skipped_tx - cannot_compute_tx))
+
+    for eui in gw_pin_dict:
+        gw_pin_data.append(gw_pin_dict[eui])
 
     return device_location_list
 
@@ -190,6 +206,7 @@ def calc_location_errors(locations):
 #
 ###############################################################################
 def filter_results_calc_error(locations):
+    pin_data = list()
     min_sample_size = 10
     moving_dev_threshold = 0.0001
 
@@ -231,6 +248,14 @@ def filter_results_calc_error(locations):
             current_result_length = len(filt_locations)
 
             if curr_weight >= current_result_length - min_sample_size:
+                for location in filt_locations:
+                    pin_data.append({
+                        "color": "blue",
+                        "lat": location['lat'],
+                        "lng": location['lng'],
+                        "zIndex": -1,
+                        "name": 'Weight: ' + str(location['weight'])
+                    })
                 break
 
             worst_loc = 0
@@ -245,6 +270,22 @@ def filter_results_calc_error(locations):
 
             filt_locations[worst_loc_i]['weight'] = curr_weight
             curr_weight += 1
+
+        pin_data.append({
+            "color": "yellow",
+            "lat": lat_avg,
+            "lng": lng_avg,
+            "zIndex": 100,
+            "name": 'Calc'
+        })
+
+        pin_data.append({
+            "color": "green",
+            "lat": first_lat,
+            "lng": first_lng,
+            "zIndex": 100,
+            "name": 'Actual'
+        })
 
         distance_error = calc_distance(lat1=lat_avg, lng1=lng_avg, lat2=first_lat, lng2=first_lng)
         print('Post weighted filter distance error: ' + str(distance_error) + ' meters')
@@ -279,6 +320,34 @@ def filter_results_calc_error(locations):
         print('Post filter distance error: ' + str(distance_error) + ' meters')
     else:
         print('Moving device! Cannot perform filtering')
+
+    return pin_data
+
+
+###############################################################################
+# Calc device locations
+#
+###############################################################################
+def calc_dev_locations(device_eui, db_file):
+    print('Device: ' + device_eui)
+    # Calculate device location estimate
+    gw_pin_data = list()
+    locations = locate_device_from_db(db_file, device_eui, gw_pin_data)
+
+    # Calculate errors
+    if locations:
+        calc_location_errors(locations)
+        dev_pin_data = filter_results_calc_error(locations)
+
+        locations = {'locations': dev_pin_data + gw_pin_data}
+
+        dir_path = os.path.dirname(os.path.realpath(__file__))
+        pin_data_path = [dir_path, 'build', 'pinData.json']
+        pin_data_file = os.path.join(*pin_data_path)
+        with open(pin_data_file, 'w') as outfile:
+            json.dump(locations, outfile, indent=1)
+    else:
+        print('Cannot compute location errors!')
 
 
 ###############################################################################
@@ -322,12 +391,21 @@ def main():
     for eui in eui_list:
         print('Device: ' + eui)
         # Calculate device location estimate
-        locations = locate_device_from_db(args.db, eui, debug=args.debug)
+        gw_pin_data = list()
+        locations = locate_device_from_db(args.db, eui, gw_pin_data, debug=args.debug)
 
         # Calculate errors
         if locations:
             calc_location_errors(locations)
-            filter_results_calc_error(locations)
+            dev_pin_data = filter_results_calc_error(locations)
+
+            locations = {'locations': dev_pin_data + gw_pin_data}
+
+            dir_path = os.path.dirname(os.path.realpath(__file__))
+            pin_data_path = [dir_path, 'build', 'pinData.json']
+            pin_data_file = os.path.join(*pin_data_path)
+            with open(pin_data_file, 'w') as outfile:
+                json.dump(locations, outfile, indent=1)
         else:
             print('Cannot compute location errors!')
 

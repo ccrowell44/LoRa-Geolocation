@@ -1,7 +1,12 @@
 /* Always set the map height explicitly to define the size of the div
 * element that contains the map. */
+#header-div {
+    height: 100px;
+    padding-bottom: 10px
+}
 #map {
-    height: 80%;
+    width: 100%;
+    height: 80vh;
 }
 /* Optional: Makes the sample page fill the window. */
 html, body {
@@ -9,4 +14,40 @@ html, body {
     margin: 0;
     padding: 0;
     overflow:auto;
+}
+
+h1 {
+    margin: 0px;
+    padding: 10px;
+    font-family: Helvetica Neue LT,Helvetica Neue,Helvetica,Arial,sans-serif;
+}
+
+button {
+    background-color: #4CAF50;
+    border: none;
+    color: white;
+    padding: 10px 20px;
+    text-align: center;
+    text-decoration: none;
+    display: inline-block;
+    font-size: 16px;
+    cursor: pointer;
+    font-family: Helvetica Neue LT,Helvetica Neue,Helvetica,Arial,sans-serif;
+}
+
+button:focus {
+    outline: 0;
+}
+
+#eui-input {
+    height: 33px;
+    padding-bottom: 0px;
+}
+
+#title-div {
+    text-align: center;
+}
+
+#button-div {
+    text-align: center;
 }

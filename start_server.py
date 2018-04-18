@@ -2,13 +2,58 @@ import argparse
 import codecs
 import http.server
 import os
+import re
 import socketserver
 import sys
 from configparser import NoOptionError, NoSectionError, RawConfigParser
 from shutil import copytree, rmtree
+from threading import Thread
+from urllib.parse import urlparse, parse_qs
+
+from run_geolocation_engine import calc_dev_locations
 
 SEC_HTML_VARIABLES  = 'HTML Variables'   # Section for general configurations
 GOOGLE_API_KEY      = 'GOOGLE_API_KEY'   # Google API Key used for Google Maps
+
+
+class Handler(http.server.SimpleHTTPRequestHandler):
+
+    # Override the do_GET function
+    def do_GET(self):
+        print('requestline', self.requestline)
+        print('path', self.path)
+        req = urlparse(self.path)
+
+        if req.path == '/geolocate':
+            req_query = parse_qs(req.query)
+            if 'eui' in req_query:
+                eui = parse_qs(req.query)['eui'][0].strip()
+                print('EUI: ' + eui)
+                match = re.match('[0-9A-Fa-f]{16}', eui)
+                if match:
+                    print('Match!')
+                    self._geolocate_dev(eui=eui)
+                    self._set_headers(200)
+                    msg = '{"msg": "Calculating geolocation for device ' + eui + '"}'
+                    self.wfile.write(msg.encode())
+                else:
+                    self.send_error(404, explain='{"msg": "Invalid eui"}')
+            else:
+                self.send_error(404, explain='{"msg": "Missing param: eui"}')
+
+        else:
+            super(Handler, self).do_GET()
+
+    def _set_headers(self, code):
+        self.send_response(code)
+        self.send_header('Content-type', 'application/json')
+        self.end_headers()
+
+    def _geolocate_dev(self, eui):
+        print('Starting new thread...')
+        thread1 = Thread(target=calc_dev_locations, kwargs={'db_file': '../geo.db', 'device_eui': eui})
+        thread1.start()
+        print('Geolocating EUI: ' + eui)
 
 
 ##########################################################################
@@ -117,8 +162,7 @@ def main():
         os.chdir(web_dir)
 
         port = int(args.port)
-        handler = http.server.SimpleHTTPRequestHandler
-        httpd = socketserver.TCPServer(('', port), handler)
+        httpd = socketserver.TCPServer(('', port), Handler)
 
         print("Serving at port:", port)
         httpd.serve_forever()
