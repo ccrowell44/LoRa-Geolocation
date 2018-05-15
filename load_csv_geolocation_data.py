@@ -22,7 +22,8 @@ def load_location_data(input_file, db_name, dev_loc_dict):
 
         with con:
             cur = con.cursor()
-            cur.execute("CREATE TABLE IF NOT EXISTS Geo(devEui TEXT, gwEui TEXT, seqNo INT, time INT, "
+            #
+            cur.execute("CREATE TABLE IF NOT EXISTS Geo(devEui TEXT, gwEui TEXT, uplinkId INT, time INT, "
                         "gwLat REAL, gwLng REAL, devLat REAL, devLng REAL)")
 
             for row in reader:

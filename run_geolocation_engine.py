@@ -38,7 +38,7 @@ def locate_device_from_db(db_file, device_eui, gw_pin_data, debug=False):
     con = sqlite3.connect(db_file)
     cur = con.cursor()
 
-    cur.execute("SELECT * FROM Geo WHERE devEui = '"+device_eui+"'ORDER BY seqNo, time")
+    cur.execute("SELECT * FROM Geo WHERE devEui = '"+device_eui+"'ORDER BY uplinkId, time")
 
     rows = cur.fetchall()
 
@@ -56,7 +56,7 @@ def locate_device_from_db(db_file, device_eui, gw_pin_data, debug=False):
     uplinks = list()
     for row in rows:
         time = int(row[3])
-        seq_no = int(row[2])
+        seq_no = row[2]
         bstn_eui = row[1]
         bstn_lat = float(row[4])
         bstn_lng = float(row[5])

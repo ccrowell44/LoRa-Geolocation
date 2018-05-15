@@ -176,6 +176,15 @@ class LocationEngine(object):
             bstn_lat_sum += lat
             bstn_lng_sum += lng
 
+
+        '''self._transaction.get_uplinks().sort(key=lambda t: t.get_time(), reverse=True)
+
+        last_uplink_time = 1
+        for uplink in self._transaction.get_uplinks():
+            if last_uplink < uplink.get_time():
+
+        # 0.000006'''
+
         self._center_lat = bstn_lat_sum / len(self._transaction.get_uplinks())
         self._center_lng = bstn_lng_sum / len(self._transaction.get_uplinks())
 

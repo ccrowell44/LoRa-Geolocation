@@ -49,9 +49,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.send_header('Content-type', 'application/json')
         self.end_headers()
 
-    def _geolocate_dev(self, eui):
+    @staticmethod
+    def _geolocate_dev(eui):
         print('Starting new thread...')
-        thread1 = Thread(target=calc_dev_locations, kwargs={'db_file': '../geo.db', 'device_eui': eui})
+        thread1 = Thread(target=calc_dev_locations, kwargs={'db_file': '../jan_18_data.db', 'device_eui': eui})
         thread1.start()
         print('Geolocating EUI: ' + eui)
 
