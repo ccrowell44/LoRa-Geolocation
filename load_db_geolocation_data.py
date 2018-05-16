@@ -91,15 +91,18 @@ def load_uplink_data(db_name, dev_loc_dict, bstn_loc_dict, config):
         cur = con.cursor()
 
         cur.execute("CREATE TABLE IF NOT EXISTS Geo(devEui TEXT, gwEui TEXT, uplinkId TEXT, "
-                    "time INT, gwLat REAL, gwLng REAL, devLat REAL, devLng REAL)")
+                    "time INT, gwLat REAL, gwLng REAL, devLat REAL, devLng REAL, PRIMARY KEY (gwEui, devEui, uplinkId))")
 
         # cur.execute("CREATE INDEX IF NOT EXISTS uplinkIdIndex ON GeoMillis (uplinkId);")
 
+        temp_cnt = 0
         query_url = config.get(SEC_DATA_MINE, QUERY_URL)
         for dev_eui, loc_data in dev_loc_dict.items():
+            print('Current Cnt: ' + str(temp_cnt))
+            temp_cnt += 1
             # Perform queries
-            q = "select time, gwtime, deveui, bstneui, dr, joinid, rssi, seqno , snr from evtlora_rp.evtlora where " \
-                "time > now() - "+str(72)+"h and freq < 920 and joinid >= 1 and deveui = '"+dev_eui+"'"
+            q = "select time, gwtime, deveui, bstneui, dr, joinid, rssi, seqno , snr, rcvdlate from " \
+                "evtlora_rp.evtlora where time > now() - "+str(144)+"h and freq < 920 and joinid >= 1 and deveui = '"+dev_eui+"'"
 
             r = requests.post(query_url, data=q, auth=HTTPBasicAuth(
                 config.get(SEC_DATA_MINE, USERNAME), config.get(SEC_DATA_MINE, PASSWORD)))
@@ -109,11 +112,26 @@ def load_uplink_data(db_name, dev_loc_dict, bstn_loc_dict, config):
             if json_array:
                 data_dict = dict()
                 for data in json_array:
+                    # Only add uplinks with known gateway locations
+                    if bstn_loc_dict.get(data['bstneui']) is None:
+                        continue
+
+                    # This shouldn't matter. Back haul issue to Nwk Svr.
+                    # if not int(float(data['rcvdlate'])):
+
+                    # Create the uplink unique identifier
                     uplink_id = str(int(float(data['joinid']))) + ":" + str(int(float(data['seqno'])))
 
                     dict_entry = data_dict.get(uplink_id)
                     if dict_entry:
-                        dict_entry.append(data)
+                        # Skip uplinks that are too slow
+                        add_uplink = True
+                        for uplink in dict_entry:
+                            if abs(float(uplink['gwtime']) - float(data['gwtime'])) > 350000:
+                                add_uplink = False
+
+                        if add_uplink:
+                            dict_entry.append(data)
                     else:
                         data_dict[uplink_id] = [data]
 
@@ -130,9 +148,13 @@ def load_uplink_data(db_name, dev_loc_dict, bstn_loc_dict, config):
                         dev_lat = str(dev_loc_dict[dev_eui]['lat'])
                         dev_lng = str(dev_loc_dict[dev_eui]['lng'])
 
-                        cur.execute("INSERT INTO Geo VALUES('" + dev_eui + "','" + gw_eui + "','" +
-                                    uplink_id + "'," + time + "," + gw_lat + "," + gw_lng + "," +
-                                    dev_lat + "," + dev_lng + ")")
+                        try:
+                            cur.execute("INSERT INTO Geo VALUES('" + dev_eui + "','" + gw_eui + "','" +
+                                        uplink_id + "'," + time + "," + gw_lat + "," + gw_lng + "," +
+                                        dev_lat + "," + dev_lng + ")")
+                        except sqlite3.IntegrityError:
+                            pass
+
 
             else:
                 print('ERROR: Request failed for device EUI: ' + dev_eui)
@@ -189,7 +211,7 @@ def parse_args():
                                      description=desc)
 
     parser.add_argument('-n', '--name',
-                        help='Name of the local db file.', default='geo_millis.db')
+                        help='Name of the local db file.', default='geo_micro.db')
 
     parser.add_argument('-f', '--file', required=True,
                         help='Path to file with comma or line separated device EUIs.')

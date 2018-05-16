@@ -1,6 +1,6 @@
 # LoRa-Geolocation
 
-The geolocation of a LoRaWAN end device can be estimated without GPS using a technique called multilateration. This technique consumes time difference of arrival (TDOA) data measured at three or more time synchronized gateways with known locations. The LoRa-Geolocation project contains a python implementation of the Taylor series method used to solve the multilateration problem.
+The geolocation of a LoRaWAN end device can be estimated without GPS using a technique called multilateration. This technique consumes time difference of arrival (TDOA) data measured at three or more time synchronized gateways with known locations. The LoRa-Geolocation project contains a python implementation of Foy's method (https://ieeexplore.ieee.org/document/4101619/) used to solve the multilateration problem.
 
 ## Dependencies
 
@@ -42,6 +42,18 @@ lat, lng = location_engine.compute_device_location()
 
 ## How to run tests
 
+Compute location with generated time data:
 ```
-$ python3 test_geolocation_engine.py
+$ python3 test_geolocation_engine.py -c
 ```
+
+Compute location with real time data:
+```
+$ python3 run_geolocation_engine.py -d example_data/geo_ft_jan_18.db -e 00250C0020018C26
+```
+
+Compute locations with real time data and view locations on a map:
+```
+$ python3 python start_server.py -b -d example_data/geo_n_albany.db -p 8001
+```
+

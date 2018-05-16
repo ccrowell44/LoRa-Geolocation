@@ -6,7 +6,7 @@ import re
 import socketserver
 import sys
 from configparser import NoOptionError, NoSectionError, RawConfigParser
-from shutil import copytree, rmtree
+from shutil import copytree, rmtree, copyfile
 from threading import Thread
 from urllib.parse import urlparse, parse_qs
 
@@ -52,7 +52,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     @staticmethod
     def _geolocate_dev(eui):
         print('Starting new thread...')
-        thread1 = Thread(target=calc_dev_locations, kwargs={'db_file': '../jan_18_data.db', 'device_eui': eui})
+        thread1 = Thread(target=calc_dev_locations, kwargs={'db_file': 'data.db', 'device_eui': eui})
         thread1.start()
         print('Geolocating EUI: ' + eui)
 
@@ -61,7 +61,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 # Replace all variables in files
 #
 ###########################################################################
-def deploy(build_dir, config):
+def deploy(build_dir, db_file, config):
     """
     Loads the config file and check that it contains the required fields
     :param build_dir: Build directory
@@ -72,6 +72,11 @@ def deploy(build_dir, config):
         rmtree(build_dir)
 
     copytree('webapp', build_dir)
+
+    if os.path.isfile(db_file):
+        copyfile(db_file, build_dir + '/data.db')
+    else:
+        print(db_file + ' does not exist!')
 
     replacements = dict()
     replace_vars = config.items(SEC_HTML_VARIABLES)
@@ -138,10 +143,13 @@ def parse_args():
                                      description=desc)
 
     parser.add_argument('-b', '--build', action='store_true', default=True,
-                        help="Build the app")
+                        help="Build the app before starting the server")
 
     parser.add_argument('-p', '--port', default=8000,
-                        help="Server port")
+                        help="The server port")
+
+    parser.add_argument('-d', '--db', required=True,
+                        help="The path to the database deployed during the build")
 
     return parser.parse_args()
 
@@ -157,7 +165,7 @@ def main():
     if config:
         # Build and start
         build_dir = 'build'
-        deploy(build_dir=build_dir, config=config)
+        deploy(build_dir=build_dir, config=config, db_file=args.db)
 
         web_dir = os.path.join(os.path.dirname(__file__), build_dir)
         os.chdir(web_dir)

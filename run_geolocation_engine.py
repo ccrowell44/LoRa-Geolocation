@@ -40,23 +40,22 @@ def locate_device_from_db(db_file, device_eui, gw_pin_data, debug=False):
 
     cur.execute("SELECT * FROM Geo WHERE devEui = '"+device_eui+"'ORDER BY uplinkId, time")
 
-    rows = cur.fetchall()
-
     # Debug Tx Counters
     total_tx = 0  # Total transactions in db
     skipped_tx = 0  # Transactions not heard by three bstns
     cannot_compute_tx = 0  # Convergence error when geolocating end device
 
     last_time = None
-    last_seq_no = None
+    last_uplink_id = None
 
-    device_location_list = list()
-
-    gw_pin_dict = dict()
     uplinks = list()
-    for row in rows:
+    device_location_list = list()
+    gw_pin_dict = dict()
+
+    row = cur.fetchone()
+    while row is not None:
         time = int(row[3])
-        seq_no = row[2]
+        uplink_id = row[2]
         bstn_eui = row[1]
         bstn_lat = float(row[4])
         bstn_lng = float(row[5])
@@ -64,32 +63,33 @@ def locate_device_from_db(db_file, device_eui, gw_pin_data, debug=False):
         real_dev_lat = float(row[6])
         real_dev_lng = float(row[7])
 
-        # Invalid bstn location, skip
+        # Invalid or missing bstn location, skip
         if not bstn_lat or not bstn_lng:
+            row = cur.fetchone()
             continue
 
-        # No real location, skip
+        # Invalid or missing device location, skip
         if not real_dev_lat or not real_dev_lng:
+            row = cur.fetchone()
             continue
 
         if last_time is None:
             last_time = time
 
-        if last_seq_no is None:
-            last_seq_no = seq_no
+        if last_uplink_id is None:
+            last_uplink_id = uplink_id
 
-        uplink = Uplink(time=time, rssi=0, snr=0, bstn_eui=bstn_eui, bstn_lat=bstn_lat, bstn_lng=bstn_lng)
+        next_uplink = Uplink(time=time, rssi=0, snr=0, bstn_eui=bstn_eui, bstn_lat=bstn_lat, bstn_lng=bstn_lng)
 
         # New transaction, check if last transaction is valid for geolocation
-        if seq_no != last_seq_no:
+        if uplink_id != last_uplink_id:
             total_tx += 1
 
             if len(uplinks) >= 3:
                 if debug:
-                    print('-'*20 + '\nSeqNo: ' + str(last_seq_no))
+                    print('-'*20 + '\nCalculate Location for SeqNo: ' + str(last_uplink_id))
                     for up in uplinks:
                         print(str(up.get_time()) + ' ' + up.get_bstn_eui() + ' ' + str(up.get_bstn_geolocation()))
-                    print('-' * 20)
 
                 for uplink in uplinks:
                     if uplink.get_bstn_eui() not in gw_pin_dict:
@@ -101,13 +101,15 @@ def locate_device_from_db(db_file, device_eui, gw_pin_data, debug=False):
                             "name": uplink.get_bstn_eui()
                         }
 
-                tx = Transaction(dev_eui=device_eui, join_id=0, seq_no=last_seq_no, datarate=0, uplinks=uplinks)
+                tx = Transaction(dev_eui=device_eui, join_id=0, seq_no=last_uplink_id, datarate=0, uplinks=uplinks)
 
                 location_engine = LocationEngine(transaction=tx, debug=False)
                 calc_lat, calc_lng = location_engine.compute_device_location()
 
                 if not calc_lat or not calc_lng:
                     cannot_compute_tx += 1
+                    if debug:
+                        print('ERROR: Location cannot be computed')
                 else:
                     location = {
                         'lat': calc_lat,
@@ -118,26 +120,55 @@ def locate_device_from_db(db_file, device_eui, gw_pin_data, debug=False):
                         location['actLng'] = real_dev_lng
 
                     device_location_list.append(location)
+                    if debug:
+                        print('SUCCESS: Location was computed')
+
+                if debug:
+                    print('-' * 20)
 
             else:
                 skipped_tx += 1
+                if debug:
+                    print('='*10 + ' Skipped ' + '='*10)
+                    for skipped_uplink in uplinks:
+                        print(skipped_uplink)
+                    print('='*29)
 
-            last_seq_no = seq_no
+            last_uplink_id = uplink_id
             uplinks = list()
 
-        elif abs(time - last_time) > 200000:  # Filter out old (invalid) uplinks
+        elif abs(time - last_time) > 300000:  # Filter out old (invalid) uplinks
             last_time = time
+            row = cur.fetchone()
             continue
 
+        # Reflection - Skip this uplink!
         valid = True
         for ex_uplink in uplinks:
-            if ex_uplink.get_bstn_geolocation()[0] == uplink.get_bstn_geolocation()[0] \
-                    and ex_uplink.get_bstn_geolocation()[1] == uplink.get_bstn_geolocation()[1]:
+            if ex_uplink.get_bstn_geolocation()[0] == next_uplink.get_bstn_geolocation()[0] \
+                    and ex_uplink.get_bstn_geolocation()[1] == next_uplink.get_bstn_geolocation()[1]:
+                if debug:
+                    print('**** Reflection ****')
+                    print('Existing: ' + str(ex_uplink))
+                    print(' Current: ' + str(next_uplink))
+                    print('********************')
+
+                # Skip this uplink!
+                while uplink_id == last_uplink_id:
+                    row = cur.fetchone()
+                    if not row:
+                        break
+                    uplink_id = row[2]
+
+                last_uplink_id = uplink_id
+                uplinks = list()
                 valid = False
+                continue
 
         if valid:
-            uplinks.append(uplink)
+            uplinks.append(next_uplink)
             last_time = time
+            row = cur.fetchone()
 
     if debug:
         print("      Number of Transaction in DB: " + str(total_tx))
@@ -184,7 +215,7 @@ def calc_location_errors(locations):
             else:
                 five_hundred_or_more += 1
 
-    print("Total number of locations: " + str(total_locs))
+    print("Total number of calculated locations: " + str(total_locs))
     per = round((fifty_or_less / total_locs) * 100, 2)
     print(str(per) + "% of location estimates were within 50 meters of the actual device location.")
 

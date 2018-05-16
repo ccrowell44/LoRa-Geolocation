@@ -142,6 +142,9 @@ class Uplink(object):
     def set_bstn_y(self, y):
         self._bstn_y = y
 
+    def __str__(self):
+        return str(self._time) + ' ' + self._bstn_eui + ' (' + str(self._bstn_lat) + ', ' + str(self._bstn_lng) + ')'
+
 
 class LocationEngine(object):
     """
