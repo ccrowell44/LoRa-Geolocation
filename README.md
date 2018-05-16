@@ -57,3 +57,4 @@ Compute locations with real time data and view locations on a map:
 $ python3 python start_server.py -b -d example_data/geo_n_albany.db -p 8001
 ```
 
+![Demo Screenshot](geolocation_demo.png)
