@@ -11,6 +11,7 @@
 
 import argparse
 import sys
+import random
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
@@ -28,6 +29,14 @@ def calculated_time_data_test(debug=False, visualize=False):
     # Known Location (43.054150, -70.781951) for known time values
     uplinks = list()
 
+    # distance to dev = 5335 meters ToF = 0.000049534 sec   299792458 m/s (speed of light)
+    uplinks.append(Uplink(time=17795, rssi=0, snr=0, bstn_eui='FF250C00010001A6',
+                          bstn_lat=43.037270, bstn_lng=-70.720497))
+
+    # distance to dev = 14850 meters ToF = 0.000049534 sec   299792458 m/s (speed of light)
+    uplinks.append(Uplink(time=49534, rssi=0, snr=0, bstn_eui='FF250C00010001A7',
+                          bstn_lat=43.118840, bstn_lng=-70.941940))
+
     # distance to dev = 8863  meters ToF = 0.000029563 sec   299792458 m/s (speed of light)
     uplinks.append(Uplink(time=29563, rssi=0, snr=0, bstn_eui='FF250C00010001A8',
                           bstn_lat=43.128362, bstn_lng=-70.742126))
@@ -36,24 +45,29 @@ def calculated_time_data_test(debug=False, visualize=False):
     uplinks.append(Uplink(time=49133, rssi=0, snr=0, bstn_eui='FF250C00010001A9',
                           bstn_lat=42.951207, bstn_lng=-70.895935))
 
-    # distance to dev = 14850 meters ToF = 0.000049534 sec   299792458 m/s (speed of light)
-    uplinks.append(Uplink(time=49534, rssi=0, snr=0, bstn_eui='FF250C00010001A7',
-                          bstn_lat=43.118840, bstn_lng=-70.941940))
+    # Do not order list!
+    random.shuffle(uplinks)
 
     tx = Transaction(dev_eui='00000000FFFFFFFF', join_id=0, seq_no=0, datarate=0, uplinks=uplinks)
 
     location_engine = LocationEngine(transaction=tx, debug=debug, visualize=visualize)
 
-    lat, lng = location_engine.compute_device_location()
-
     if visualize or debug:
         print("\n")
 
-    print("Calculated Device Location Lat: " + str(lat) + " Lng: " + str(lng))
-    print("    Actual Device Location Lat: 43.054150 Lng: -70.781951")
-    print("\nDistance Error: " + str(round(calc_distance(lat, lng, 43.054150, -70.781951), 1)) + ' meters')
+    algs = ['schauAndRobinson3', 'schauAndRobinson', 'friedlander3', 'friedlander', 'taylorSeries', 'schmidt']  # smithAndAbel
+    for alg in algs:
+        print('~~~~~~ Test '+alg+' Algorithm ~~~~~~')
+        try:
+            lat, lng = location_engine.compute_device_location(calculation=alg)  # taylorSeries smithAndAbel schmidt
 
-    print('\n' + "End calculated time data test: " + str(datetime.now()))
+            print("Calculated Device Location Lat: " + str(lat) + " Lng: " + str(lng))
+            print("    Actual Device Location Lat: 43.054150 Lng: -70.781951")
+            print("\nDistance Error: " + str(round(calc_distance(lat, lng, 43.054150, -70.781951), 1)) + ' meters')
+
+            print('\n' + "End calculated time data test: " + str(datetime.now()))
+        except Exception as e:
+            print('Could not run algorithm!')
 
 
 ###############################################################################

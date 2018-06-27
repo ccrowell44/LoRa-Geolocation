@@ -201,14 +201,27 @@ class LocationEngine(object):
         """
         return self._dev_lat, self._dev_lng
 
-    def compute_device_location(self):
+    def compute_device_location(self, calculation='taylorSeries'):
         """
         Compute the estimated location of the device
         :return: (float, float)
         """
         self.__convert_bstn_coordinates()
 
-        self.__compute_dev_location()
+        if calculation == 'taylorSeries':
+            self.__taylor_series_expansion()
+        elif calculation == 'smithAndAbel':
+            self.__smith_and_abel_algorithm()
+        elif calculation == 'schmidt':
+            self.__schmidt_algorithm()
+        elif calculation == 'friedlander':
+            self.__friedlander_algorithm()
+        elif calculation == 'friedlander3':
+            self.__friedlander_algorithm3()
+        elif calculation == 'schauAndRobinson':
+            self.__schau_and_robinson()
+        elif calculation == 'schauAndRobinson3':
+            self.__schau_and_robinson3()
 
         self.__convert_dev_coordinates()
 
@@ -269,7 +282,7 @@ class LocationEngine(object):
                                                            (c * math.cos(lat_c) * math.cos(c) -
                                                             y * math.sin(lat_c) * math.sin(c))))
 
-    def __compute_dev_location(self):
+    def __taylor_series_expansion(self):
         uplinks = self._transaction.get_uplinks()
 
         # Initial guess for location - Use first bstn's location
@@ -408,3 +421,331 @@ class LocationEngine(object):
 
         self._dev_x = x0
         self._dev_y = y0
+
+    def __smith_and_abel_algorithm(self):
+        uplinks = self._transaction.get_uplinks()
+
+        # Create reference bstn at 0,0
+        x0 = uplinks[0].get_bstn_x()
+        y0 = uplinks[0].get_bstn_y()
+
+        x0 = x0 * -1
+        y0 = y0 * -1
+
+        print(x0, y0)
+
+        for uplink in uplinks:
+            uplink.set_bstn_x(uplink.get_bstn_x() + x0)
+            uplink.set_bstn_y(uplink.get_bstn_y() + y0)
+            print(str(uplink.get_bstn_x()) + ', ' + str(uplink.get_bstn_y()))
+
+        # Distance from source to sensor_1
+        Rs = V * (uplinks[0].get_time()  / self._T)
+        print('Rs: ' + str(Rs))
+
+        # Distance from source to sensor_2 minus Rs
+        d21 = V * (uplinks[1].get_time()  / self._T) - Rs
+        print('d21: ' + str(d21))
+
+        # Distance from source to sensor_3 minus Rs
+        d31 = V * (uplinks[2].get_time()  / self._T) - Rs
+        print('d31: ' + str(d31))
+
+        # Distance from sensor_2 to sensor_1
+        R2 = math.sqrt(math.pow((uplinks[1].get_bstn_x() - uplinks[0].get_bstn_x()), 2) + math.pow((uplinks[1].get_bstn_y() - uplinks[0].get_bstn_y()), 2))
+        print('R2: ' + str(R2))
+
+        # Distance from sensor_3 to sensor_1
+        R3 = math.sqrt(math.pow((uplinks[2].get_bstn_x() - uplinks[0].get_bstn_x()), 2) + math.pow((uplinks[2].get_bstn_y() - uplinks[0].get_bstn_y()), 2))
+
+        error2 = math.pow(R2, 2) - math.pow(d21, 2) - 2 * Rs * d21  # - 2 * x2^T * xs
+        error3 = math.pow(R3, 2) - math.pow(d31, 2) - 2 * Rs * d31  # - 2 * x3^T * xs
+
+        print('error2: ' + str(error2))
+        print('error3: ' + str(error3))
+
+    def __schmidt_algorithm(self):
+        uplinks = self._transaction.get_uplinks()
+
+        # Ax + By = D
+
+        # HARD CODED for Testing
+        x1 = uplinks[0].get_bstn_x()
+        x2 = uplinks[1].get_bstn_x()
+        x3 = uplinks[2].get_bstn_x()
+        # x4 = uplinks[3].get_bstn_x()
+        y1 = uplinks[0].get_bstn_y()
+        y2 = uplinks[1].get_bstn_y()
+        y3 = uplinks[2].get_bstn_y()
+        # y4 = uplinks[3].get_bstn_y()
+        m32 = V * ((uplinks[2].get_time() - uplinks[1].get_time()) / self._T)
+        m13 = V * ((uplinks[0].get_time() - uplinks[2].get_time()) / self._T)
+        m42 = V * ((uplinks[3].get_time() - uplinks[1].get_time()) / self._T)
+        m14 = V * ((uplinks[0].get_time() - uplinks[3].get_time()) / self._T)
+        m21 = V * ((uplinks[1].get_time() - uplinks[0].get_time()) / self._T)
+        m32 = V * ((uplinks[2].get_time() - uplinks[1].get_time()) / self._T)
+        m42 = V * ((uplinks[3].get_time() - uplinks[1].get_time()) / self._T)
+        R1 = math.sqrt(uplinks[0].get_bstn_x()**2 + uplinks[0].get_bstn_y()**2)
+        R2 = math.sqrt(uplinks[1].get_bstn_x()**2 + uplinks[1].get_bstn_y()**2)
+        R3 = math.sqrt(uplinks[2].get_bstn_x()**2 + uplinks[2].get_bstn_y()**2)
+        R4 = math.sqrt(uplinks[3].get_bstn_x()**2 + uplinks[3].get_bstn_y()**2)
+
+        # Characteristic Equations
+        A3 = x1 * m32 + x2 * m13 + x3 * (-m32 - m13)
+        B3 = y1 * m32 + y2 * m13 + y3 * (-m32 - m13)
+        D3 = 0.5 * (m21 * m32 * m13 + R1**2 * m32 + R2**2 * m13 + R3**2 * (-m32 - m13))
+
+        A4 = x1 * m42 + x2 * m14 + x3 * (-m42 - m14)
+        B4 = y1 * m42 + y2 * m14 + y3 * (-m42 - m14)
+        D4 = 0.5 * (m21 * m42 * m14 + R1**2 * m42 + R2**2 * m14 + R4**2 * (-m42 - m14))
+
+        # Solve in one step
+        g = np.matrix([[A3, B3],[A4, B4]])
+        m = np.matrix([[D3],[D4]])
+        # print('g: ' + str(g))
+        # print('m: ' + str(m))
+        # print('Inv g: ' + str(np.linalg.inv(g)))
+
+        origin = np.dot(np.linalg.inv(g), m)
+        # print('origin: ' + str(origin))
+
+        self._dev_x = origin.item((0, 0))
+        self._dev_y = origin.item((1, 0))
+
+    def __friedlander_algorithm(self):
+        uplinks = self._transaction.get_uplinks()
+
+        # origin = (S^T * M^T * M * S)^-1 * S^T * M^T * M * u
+
+        # HARD CODED for Testing
+        x1 = uplinks[0].get_bstn_x()
+        x2 = uplinks[1].get_bstn_x()
+        x3 = uplinks[2].get_bstn_x()
+        x4 = uplinks[3].get_bstn_x()
+        y1 = uplinks[0].get_bstn_y()
+        y2 = uplinks[1].get_bstn_y()
+        y3 = uplinks[2].get_bstn_y()
+        y4 = uplinks[3].get_bstn_y()
+
+        m21 = V * ((uplinks[1].get_time() - uplinks[0].get_time()) / self._T)
+        m31 = V * ((uplinks[2].get_time() - uplinks[0].get_time()) / self._T)
+        m41 = V * ((uplinks[3].get_time() - uplinks[0].get_time()) / self._T)
+
+        R1 = math.sqrt(uplinks[0].get_bstn_x() ** 2 + uplinks[0].get_bstn_y() ** 2)
+        R2 = math.sqrt(uplinks[1].get_bstn_x() ** 2 + uplinks[1].get_bstn_y() ** 2)
+        R3 = math.sqrt(uplinks[2].get_bstn_x() ** 2 + uplinks[2].get_bstn_y() ** 2)
+        R4 = math.sqrt(uplinks[3].get_bstn_x() ** 2 + uplinks[3].get_bstn_y() ** 2)
+
+        # Solve in one step
+        I = np.identity(3)
+        Z = np.roll(I, -1, 0)
+        D = np.linalg.inv(np.matrix([[m21, 0, 0],
+                                     [0, m31, 0],
+                                     [0, 0, m41]]))
+
+        S = np.matrix([[x2 - x1, y2 - y1],
+                       [x3 - x1, y3 - y1],
+                       [x4 - x1, y4 - y1]])
+        M = (I - Z) * D
+        u = 0.5 * np.matrix([[R2**2 - R1**2 - m21**2],
+                             [R3**2 - R1**2 - m31**2],
+                             [R4**2 - R1**2 - m41**2]])
+
+        origin = np.linalg.inv(S.transpose() * M.transpose() * M * S) * S.transpose() * M.transpose() * M * u
+
+        self._dev_x = origin.item((0, 0))
+        self._dev_y = origin.item((1, 0))
+
+    def __friedlander_algorithm3(self):
+        uplinks = self._transaction.get_uplinks()
+
+        # origin = (S^T * M^T * M * S)^-1 * S^T * M^T * M * u
+
+        # HARD CODED for Testing
+        x1 = uplinks[0].get_bstn_x()
+        x2 = uplinks[1].get_bstn_x()
+        x3 = uplinks[2].get_bstn_x()
+        y1 = uplinks[0].get_bstn_y()
+        y2 = uplinks[1].get_bstn_y()
+        y3 = uplinks[2].get_bstn_y()
+
+        m21 = V * ((uplinks[1].get_time() - uplinks[0].get_time()) / self._T)
+        m31 = V * ((uplinks[2].get_time() - uplinks[0].get_time()) / self._T)
+
+        R1 = math.sqrt(uplinks[0].get_bstn_x() ** 2 + uplinks[0].get_bstn_y() ** 2)
+        R2 = math.sqrt(uplinks[1].get_bstn_x() ** 2 + uplinks[1].get_bstn_y() ** 2)
+        R3 = math.sqrt(uplinks[2].get_bstn_x() ** 2 + uplinks[2].get_bstn_y() ** 2)
+
+        # Solve in one step
+        I = np.identity(2)
+        Z = np.roll(I, -1, 0)
+        D = np.linalg.inv(np.matrix([[m21, 0],
+                                     [0, m31]]))
+
+        S = np.matrix([[x2 - x1, y2 - y1],
+                       [x3 - x1, y3 - y1]])
+        M = (I - Z) * D
+        u = 0.5 * np.matrix([[R2**2 - R1**2 - m21**2],
+                             [R3**2 - R1**2 - m31**2]])
+
+        origin = np.linalg.inv(S.transpose() * M.transpose() * M * S) * S.transpose() * M.transpose() * M * u
+
+        self._dev_x = origin.item((0, 0))
+        self._dev_y = origin.item((1, 0))
+
+    def __schau_and_robinson(self):
+        uplinks = self._transaction.get_uplinks()
+
+        # Create reference bstn at 0,0
+        x0 = uplinks[3].get_bstn_x()
+        y0 = uplinks[3].get_bstn_y()
+
+        x0 = x0 * -1
+        y0 = y0 * -1
+
+        print(x0, y0)
+
+        for uplink in uplinks:
+            uplink.set_bstn_x(uplink.get_bstn_x() + x0)
+            uplink.set_bstn_y(uplink.get_bstn_y() + y0)
+
+        # Uplink 4 is the origin
+
+        # origin = (S^T * M^T * M * S)^-1 * S^T * M^T * M * u
+
+        # HARD CODED for Testing
+        x1 = uplinks[0].get_bstn_x()
+        x2 = uplinks[1].get_bstn_x()
+        x3 = uplinks[2].get_bstn_x()
+        y1 = uplinks[0].get_bstn_y()
+        y2 = uplinks[1].get_bstn_y()
+        y3 = uplinks[2].get_bstn_y()
+
+        d14 = V * ((uplinks[0].get_time() - uplinks[2].get_time()) / self._T)
+        d24 = V * ((uplinks[1].get_time() - uplinks[2].get_time()) / self._T)
+        d34 = V * ((uplinks[2].get_time() - uplinks[2].get_time()) / self._T)
+
+        R1 = math.sqrt(uplinks[0].get_bstn_x() ** 2 + uplinks[0].get_bstn_y() ** 2)
+        R2 = math.sqrt(uplinks[1].get_bstn_x() ** 2 + uplinks[1].get_bstn_y() ** 2)
+        R3 = math.sqrt(uplinks[2].get_bstn_x() ** 2 + uplinks[2].get_bstn_y() ** 2)
+
+        # Solve in two steps
+        # 1) Find Rs
+        # 2) Find origin(s)
+
+        T = np.matrix([[R1**2 - d14**2],
+                       [R2**2 - d24**2],
+                       [R3**2 - d34**2]])
+
+        d = np.matrix([[d14],
+                       [d24],
+                       [d34]])
+
+        M = np.matrix([[x1, y1],
+                       [x2, y2],
+                       [x3, y3]])
+
+        pM = np.linalg.pinv(M)
+
+        a = 4 - 4 * d.transpose() * pM.transpose() * pM * d
+        b = 2 * d.transpose() * pM.transpose() * pM * T + 2 * T.transpose() * pM.transpose() * pM * d
+        c = - (T.transpose() * pM.transpose() * pM * T)
+
+        desc = b ** 2 - 4 * a * c  # discriminant
+
+        Rs1 = None
+        Rs2 = None
+        if desc < 0:
+            print("This equation has no real solution")
+        elif desc == 0:
+            Rs1 = (-b + math.sqrt(b ** 2 - 4 * a * c)) / 2 * a
+        else:
+            Rs1 = (-b + math.sqrt((b ** 2) - (4 * (a * c)))) / (2 * a)
+            Rs2 = (-b - math.sqrt((b ** 2) - (4 * (a * c)))) / (2 * a)
+
+        origin = np.matrix([[0.0],
+                            [0.0]])
+        if Rs1 and Rs2:
+            Rs1 = Rs1.item((0, 0))
+            Rs2 = Rs2.item((0, 0))
+
+            origin = 0.5 * pM * (T - 2 * Rs1 * d)
+        elif Rs1:
+            Rs1 = Rs1.item((0, 0))
+
+            origin = 0.5 * pM * (T - 2 * Rs1 * d)
+
+        self._dev_x = origin.item((0, 0)) - x0
+        self._dev_y = origin.item((1, 0)) - y0
+
+    def __schau_and_robinson3(self):
+        uplinks = self._transaction.get_uplinks()
+
+        # Create reference bstn at 0,0
+        # Uplink 3 is the origin - uplinks[2]
+        x0 = uplinks[2].get_bstn_x()
+        y0 = uplinks[2].get_bstn_y()
+
+        x0 = x0 * -1
+        y0 = y0 * -1
+
+        for num, uplink in enumerate(uplinks):
+            uplink.set_bstn_x(uplink.get_bstn_x() + x0)
+            uplink.set_bstn_y(uplink.get_bstn_y() + y0)
+
+        # HARD CODED for Testing
+        x1 = uplinks[0].get_bstn_x()
+        x2 = uplinks[1].get_bstn_x()
+        y1 = uplinks[0].get_bstn_y()
+        y2 = uplinks[1].get_bstn_y()
+
+        d13 = V * ((uplinks[0].get_time() - uplinks[2].get_time()) / self._T)
+        d23 = V * ((uplinks[1].get_time() - uplinks[2].get_time()) / self._T)
+
+        R1 = math.sqrt(uplinks[0].get_bstn_x() ** 2 + uplinks[0].get_bstn_y() ** 2)
+        R2 = math.sqrt(uplinks[1].get_bstn_x() ** 2 + uplinks[1].get_bstn_y() ** 2)
+
+        # Solve in two steps
+        # 1) Find Rs
+        # 2) Find origin(s)
+        T = np.matrix([[R1 ** 2 - d13 ** 2],
+                       [R2 ** 2 - d23 ** 2]])
+
+        d = np.matrix([[d13],
+                       [d23]])
+
+        M = np.matrix([[x1, y1],
+                       [x2, y2]])
+
+        a = 4 - 4 * d.transpose() * np.linalg.inv(M).transpose() * np.linalg.inv(M) * d
+        b = 2 * d.transpose() * np.linalg.inv(M).transpose() * np.linalg.inv(M) * T + 2 * T.transpose() * \
+            np.linalg.inv(M).transpose() * np.linalg.inv(M) * d
+        c = - (T.transpose() * np.linalg.inv(M).transpose() * np.linalg.inv(M) * T)
+
+        desc = b ** 2 - 4 * a * c  # discriminant
+
+        Rs1 = None
+        Rs2 = None
+        if desc < 0:
+            pass
+            # print("This equation has no real solution")
+        elif desc == 0:
+            Rs1 = (-b + math.sqrt(b ** 2 - 4 * a * c)) / (2 * a)
+        else:
+            Rs1 = (-b + math.sqrt((b ** 2) - (4 * (a * c)))) / (2 * a)
+            Rs2 = (-b - math.sqrt((b ** 2) - (4 * (a * c)))) / (2 * a)
+
+        origin = np.matrix([[0.0],
+                            [0.0]])
+        if Rs1 and Rs2:
+            Rs1 = Rs1.item((0, 0))
+            Rs2 = Rs2.item((0, 0))
+
+            origin = 0.5 * np.linalg.inv(M) * (T - 2 * Rs1 * d)
+        elif Rs1:
+            Rs1 = Rs1.item((0, 0))
+
+            origin = 0.5 * np.linalg.inv(M) * (T - 2 * Rs1 * d)
+
+        self._dev_x = origin.item((0, 0)) - x0
+        self._dev_y = origin.item((1, 0)) - y0
