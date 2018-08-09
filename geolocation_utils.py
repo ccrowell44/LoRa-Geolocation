@@ -24,6 +24,9 @@ M = 1000000.0
 # Nanoseconds in second
 N = 1000000000.0
 
+# Supported algorithms
+ALGORITHMS = ['schauAndRobinson3', 'friedlander', 'taylorSeries', 'schmidt', 'centroid']
+
 
 ###############################################################################
 # Get distance between two coordinates (in meters)

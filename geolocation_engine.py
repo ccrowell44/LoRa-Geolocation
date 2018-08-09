@@ -222,6 +222,8 @@ class LocationEngine(object):
             self.__schau_and_robinson()
         elif calculation == 'schauAndRobinson3':
             self.__schau_and_robinson3()
+        elif calculation == 'centroid':
+            self.__simple_centroid()
 
         self.__convert_dev_coordinates()
 
@@ -741,7 +743,7 @@ class LocationEngine(object):
             Rs1 = Rs1.item((0, 0))
             Rs2 = Rs2.item((0, 0))
 
-            origin = 0.5 * np.linalg.inv(M) * (T - 2 * Rs1 * d)
+            origin = 0.5 * np.linalg.inv(M) * (T - 2 * Rs2 * d)
         elif Rs1:
             Rs1 = Rs1.item((0, 0))
 
@@ -749,3 +751,15 @@ class LocationEngine(object):
 
         self._dev_x = origin.item((0, 0)) - x0
         self._dev_y = origin.item((1, 0)) - y0
+
+    def __simple_centroid(self):
+        uplinks = self._transaction.get_uplinks()
+
+        total_x = 0.0
+        total_y = 0.0
+        for uplink in uplinks:
+            total_x += uplink.get_bstn_x()
+            total_y += uplink.get_bstn_y()
+
+        self._dev_x = total_x / len(uplinks)
+        self._dev_y = total_y / len(uplinks)

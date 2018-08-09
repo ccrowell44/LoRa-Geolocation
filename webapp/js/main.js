@@ -1,6 +1,10 @@
 var map;
 var markers = [];
 
+$(document).ready(function() {
+  $.ajaxSetup({ cache: false });
+});
+
 // Initialize the map with the markers in the pinData json file
 function initMap() {
   map = new google.maps.Map(document.getElementById('map'), {

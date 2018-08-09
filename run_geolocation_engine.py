@@ -34,11 +34,11 @@ from geolocation_utils import validate_euis, calc_distance
 #    }
 # ]
 ###############################################################################
-def locate_device_from_db(db_file, device_eui, gw_pin_data, debug=False):
+def locate_device_from_db(db_file, device_eui, gw_pin_data=None, debug=False, algorithm='taylorSeries'):
     con = sqlite3.connect(db_file)
     cur = con.cursor()
 
-    cur.execute("SELECT * FROM Geo WHERE devEui = '"+device_eui+"'ORDER BY uplinkId, time")
+    cur.execute("SELECT * FROM Geo WHERE devEui = '"+device_eui+"' ORDER BY uplinkId, time")
 
     # Debug Tx Counters
     total_tx = 0  # Total transactions in db
@@ -79,13 +79,15 @@ def locate_device_from_db(db_file, device_eui, gw_pin_data, debug=False):
         if last_uplink_id is None:
             last_uplink_id = uplink_id
 
+        # For testing micro
+        # time = round(time/1000.0)
         next_uplink = Uplink(time=time, rssi=0, snr=0, bstn_eui=bstn_eui, bstn_lat=bstn_lat, bstn_lng=bstn_lng)
 
         # New transaction, check if last transaction is valid for geolocation
         if uplink_id != last_uplink_id:
             total_tx += 1
 
-            if len(uplinks) >= 3:
+            if (len(uplinks) >= 3 and algorithm not in ['friedlander', 'schmidt']) or len(uplinks) >= 4:
                 if debug:
                     print('-'*20 + '\nCalculate Location for SeqNo: ' + str(last_uplink_id))
                     for up in uplinks:
@@ -103,8 +105,14 @@ def locate_device_from_db(db_file, device_eui, gw_pin_data, debug=False):
 
                 tx = Transaction(dev_eui=device_eui, join_id=0, seq_no=last_uplink_id, datarate=0, uplinks=uplinks)
 
-                location_engine = LocationEngine(transaction=tx, debug=False)
-                calc_lat, calc_lng = location_engine.compute_device_location()
+                location_engine = LocationEngine(transaction=tx, debug=False, microseconds=False)
+
+                calc_lat, calc_lng = None, None
+                try:
+                    calc_lat, calc_lng = location_engine.compute_device_location(calculation=algorithm)
+                except Exception as e:
+                    if debug:
+                        print('Exception while calculating location: ' + str(e))
 
                 if not calc_lat or not calc_lng:
                     cannot_compute_tx += 1
@@ -175,8 +183,11 @@ def locate_device_from_db(db_file, device_eui, gw_pin_data, debug=False):
         print("Number of Valid Transaction in DB: " + str(total_tx - skipped_tx))
         print("Number of Successful Calculations: " + str(total_tx - skipped_tx - cannot_compute_tx))
 
-    for eui in gw_pin_dict:
-        gw_pin_data.append(gw_pin_dict[eui])
+    print("      Number of Transaction in DB: " + str(total_tx))
+
+    if gw_pin_data is not None:
+        for eui in gw_pin_dict:
+            gw_pin_data.append(gw_pin_dict[eui])
 
     return device_location_list
 

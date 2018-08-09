@@ -74,7 +74,8 @@ def deploy(build_dir, db_file, config):
     copytree('webapp', build_dir)
 
     if os.path.isfile(db_file):
-        copyfile(db_file, build_dir + '/data.db')
+        os.path.join(build_dir, 'data.db')
+        copyfile(db_file, os.path.join(build_dir, 'data.db'))
     else:
         print(db_file + ' does not exist!')
 
